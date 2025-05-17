@@ -1,9 +1,9 @@
-{-# LANGUAGE FlexibleContexts #-}
 import Numeric.LinearAlgebra
+import Data.Complex (Complex(..))
 import Data.List (maximumBy, sort)
 import Data.Ord (comparing)
 import System.IO
-import System.CPUTime
+import System.Clock (getTime, Clock(Monotonic), toNanoSecs)
 import Text.Printf
 
 maxDepth :: Int
@@ -59,6 +59,11 @@ polyFraction p q x =
           in lead * polyVal pr y / polyVal qr y
      else polyVal p x / polyVal q x
 
+normalizeByMaxCoefficient :: [Double] -> [Double]
+normalizeByMaxCoefficient coeffs =
+  let maxCoeff = maximum (map abs coeffs)
+  in if maxCoeff /= 0 then map (/ maxCoeff) coeffs else coeffs
+
 bisection :: [Double] -> Double -> Double -> Double -> Maybe Double
 bisection coeffs a b tol =
   let signA = polyValSign coeffs a
@@ -92,24 +97,49 @@ findRoots coeffs a b depth =
          then [-head coeffs / coeffs !! 1]
          else
            let d_coeffs = derivePoly coeffs
-               d_roots = findRoots d_coeffs a b (depth + 1)
+               d_roots = findRoots (normalizeByMaxCoefficient d_coeffs) a b (depth + 1)
                allPoints = sort (a : b : d_roots)
                dp = derivePoly coeffs
            in foldr (\(x1, x2) acc ->
                 case bisection coeffs x1 x2 1e-6 of
-                  Just m -> case newtonRaphson coeffs dp m x1 x2 tolerance 500 of
+                  Just m -> case newtonRaphson coeffs dp m x1 x2 tolerance 100 of
                               Just root -> root : acc
                               Nothing -> acc
                   Nothing -> acc
               ) [] (zip allPoints (tail allPoints))
 
+haskellPolyRoots :: [Double] -> [Complex Double]
+haskellPolyRoots coeffs =
+  let n = length coeffs - 1
+      a = fromList (map (/ head coeffs) (tail coeffs)) :: Vector Double
+      companion = (n><n)
+        [ if i == j+1 then 1
+          else if j == n-1 then -a ! i
+          else 0
+        | i <- [0..n-1], j <- [0..n-1] ] :: Matrix Double
+      complexCompanion = cmap (:+ 0) companion
+  in toList . fst $ eig complexCompanion
+
 main :: IO ()
 main = do
   coeffs <- readCoefficients "poly_coeff_newton.csv"
 
-  start <- getCPUTime
+  start <- getTime Monotonic
   let bound = fujiwaraBound coeffs
   let roots = findRoots coeffs (-bound) bound 0
-  end <- getCPUTime
+  end <- getTime Monotonic
+
+  let duration = fromIntegral (toNanoSecs (end - start)) / 1e9 :: Double
   putStrLn $ "Newton-Raphson and Bisection method roots: " ++ show roots
-  printf "Time taken: %.10f seconds\n" (fromIntegral (end - start) / 1e12 :: Double)
+  printf "Time taken: %.10f seconds\n" duration
+
+  putStrLn "About to compute HMatrix roots..."
+
+  -- Haskell & HMatrix Implementation Comparison
+  startHMatrix <- getTime Monotonic
+--  let hMatrixRoots = haskellPolyRoots coeffs
+  endHMatrix <- getTime Monotonic
+
+  let durationHMatrix = fromIntegral (toNanoSecs (endHMatrix - startHMatrix)) / 1e9 :: Double
+--  putStrLn $ "Haskell Polynomial Roots: " ++ show hMatrixRoots
+  printf "HMatrix time taken: %.10f seconds\n" durationHMatrix

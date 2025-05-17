@@ -142,13 +142,16 @@ def main():
     coefficients = read_csv(file_path)
 
     starting_time = time()
-    roots = find_roots(coefficients, -fujiwara_bound(coefficients), fujiwara_bound(coefficients))
+    bound = fujiwara_bound(coefficients)
+    roots = find_roots(coefficients, -bound, bound)
 
     # fujiwara is tighter than couchy and it is vectorizable (so it is faster using numpy...)
-    # roots = find_all_roots(coefficients, -cauchy_bound(coefficients), cauchy_bound(coefficients))
+    # bound = cauchy_bound(coefficients)
+    # roots = find_all_roots(coefficients, -bound, bound)
 
     # "If all coefficients are nonzero, Fujiwara's bound is sharper, since each element in Fujiwara's bound is the geometric mean of first elements in Kojima's bound." - Wikipedia
-    # roots = find_all_roots(coefficients, -kojima_bound(coefficients), kojima_bound(coefficients))
+    # bound = kojima_bound(coefficients)
+    # roots = find_all_roots(coefficients, -bound, bound)
     end_time = time() - starting_time
     print(f"Newton-Raphson and Bisection method roots: {roots.tolist()}")
     print("Time taken:", end_time)
