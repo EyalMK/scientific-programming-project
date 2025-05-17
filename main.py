@@ -42,11 +42,6 @@ def kojima_bound(coefficients):
     return max(polys)
 
 
-def derive_poly(coefficients, n):
-    deg = np.arange(n, 0, -1)
-    return deg * coefficients[:-1]
-
-
 def poly_val(p, x):
     x_degrees_by_p = np.ones_like(p) * x
     x_degrees_by_p[0] = 1
@@ -81,6 +76,11 @@ def normalize_by_max_coefficient(coefficients):
     if max_coefficient != 0:
         return coefficients / max_coefficient
     return coefficients
+
+
+def derive_poly(coefficients, n):
+    deg = np.arange(n, 0, -1)
+    return deg * coefficients[:-1]
 
 
 def bisection_method(coefficients, a, b, tolerance=1e-6):
