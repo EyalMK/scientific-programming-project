@@ -4,7 +4,7 @@ import csv
 from time import time
 
 sys.setrecursionlimit(10000)
-TOLERANCE = 1e-10
+TOLERANCE = 1e-6
 
 
 def read_csv(file_path):
@@ -43,10 +43,11 @@ def kojima_bound(coefficients):
 
 
 def poly_val(p, x):
-    x_degrees_by_p = np.ones_like(p) * x
-    x_degrees_by_p[0] = 1
-    x_degrees_by_p = np.multiply.accumulate(x_degrees_by_p)
-    return np.dot(p, x_degrees_by_p[::-1])
+    n = len(p)
+    xx = np.full(n, x)
+    xx[0] = 1
+    xx = np.multiply.accumulate(xx)
+    return np.dot(xx[::-1], p)
 
 
 def poly_val_sign(p, x):
@@ -83,7 +84,7 @@ def derive_poly(coefficients, n):
     return deg * coefficients[:-1]
 
 
-def bisection_method(coefficients, a, b, tolerance=1e-6):
+def bisection_method(coefficients, a, b, tolerance=TOLERANCE):
     a_sign = poly_val_sign(coefficients, a)
     b_sign = poly_val_sign(coefficients, b)
     if a_sign == 0:
@@ -121,13 +122,14 @@ def newton_raphson_method(coefficients, no_coefficients, initial_guess, a, b, to
 def find_roots(coefficients, a, b):
     roots = []
     n = len(coefficients)
-    if n > 2:
-        d_roots = find_roots(normalize_by_max_coefficient(derive_poly(coefficients, n - 1)), a, b)
-    else:
+    if n <= 2:
         return [-coefficients[0] / coefficients[1]]
-    d_roots = np.sort(np.append(d_roots, [a, b]))
-    for i in range(len(d_roots) - 1):
-        interval_start, interval_end = d_roots[i], d_roots[i + 1]
+    else:
+        d_roots = find_roots(normalize_by_max_coefficient(derive_poly(coefficients, n - 1)), a, b)
+
+    intervals = np.sort(np.append(d_roots, [a, b]))
+    for i in range(len(intervals) - 1):
+        interval_start, interval_end = intervals[i], intervals[i + 1]
         bisection_root = bisection_method(coefficients, interval_start, interval_end)
         if bisection_root is not None:
             root = newton_raphson_method(coefficients, n, bisection_root, interval_start, interval_end)
@@ -145,13 +147,6 @@ def main():
     bound = fujiwara_bound(coefficients)
     roots = find_roots(coefficients, -bound, bound)
 
-    # fujiwara is tighter than couchy and it is vectorizable (so it is faster using numpy...)
-    # bound = cauchy_bound(coefficients)
-    # roots = find_all_roots(coefficients, -bound, bound)
-
-    # "If all coefficients are nonzero, Fujiwara's bound is sharper, since each element in Fujiwara's bound is the geometric mean of first elements in Kojima's bound." - Wikipedia
-    # bound = kojima_bound(coefficients)
-    # roots = find_all_roots(coefficients, -bound, bound)
     end_time = time() - starting_time
     print(f"Newton-Raphson and Bisection method roots: {roots.tolist()}")
     print("Time taken:", end_time)

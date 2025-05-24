@@ -46,7 +46,8 @@
     \item Iterative method using first derivative and an initial guess
     \item Update rule: \( x_{n+1} = x_n - \frac{f(x_n)}{f'(x_n)} \)
     \item Fast convergence if initial guess is close
-    \item Can fail if derivative is zero or initial guess is poor
+    \item Time Complexity is O(log(log(n)))
+    \item But... Can fail if derivative is zero or initial guess is poor\newline Can exceed out of bounds [a, b]
 \end{itemize}
 \end{frame}
 
@@ -55,16 +56,16 @@
     \item Bracketed root-finding method
     \item Halves interval \([a, b]\) until $width < \epsilon\ $ \
     \item Always converges if root is in interval
-    \item Slower than Newton-Raphson
+    \item Time Complexity is O(log(n)). Slower than Newton-Raphson.
 \end{itemize}
 \end{frame}
 
 \begin{frame}{Hybrid Approach}
 \begin{itemize}
     \item The hybrid approach is supposed to find a single root in an interval [a, b], wherein f sustains $f(a)*f(b) < 0 $
-    \item Base Assumption - Each root x of polynomial f(x) ensures either f'(x) = 0 or x is between two roots of f'(x)
-    \item Use Bisection to ensure safety and convergence by providing an initial guess for Newton-Raphson
+    \item Assumptions - Each root x of polynomial f(x) ensures either f'(x) = 0 or x is between two roots of f'(x)
     \item Use Newton-Raphson to find roots in respect to the defined tolerance $\epsilon\ $ \
+    \item If bounds are exceeded, fallback to Bisection
 \end{itemize}
 \end{frame}
 
@@ -85,6 +86,32 @@
     \item \textbf{Fujiwara bound was fastest in integration with the hybrid approach}
 \end{itemize}
 \end{frame}
+
+\begin{frame}{Fujiwara Bound}
+\begin{itemize}
+  \item Let $p(z)=a_n z^n + a_{n-1} z^{n-1} + \dots + a_0$ with $a_n\neq 0$.
+  \item \textbf{Fujiwara’s bound:} every root $\gamma$ of $p$ satisfies
+        \[
+          |\gamma|\;\le\;
+          2\max\Bigl\{
+          \bigl|\tfrac{a_{n-1}}{a_n}\bigr|,
+          \bigl|\tfrac{a_{n-2}}{a_n}\bigr|^{\frac12},
+          \dots,
+          \bigl|\tfrac{a_{1}}{a_n}\bigr|^{\frac1{n-1}},
+          \bigl|\tfrac{a_{0}}{2a_n}\bigr|^{\frac1n}
+          \Bigr\}.
+        \]
+  \item For a \emph{monic} polynomial ($a_n=1$) this simplifies to
+        \[
+        |\gamma|\le 2\max\bigl\{|a_{n-1}|,\;|a_{n-2}|^{1/2},\dots,
+        |a_1|^{1/(n-1)},|a_0/2|^{1/n}\bigr\}.
+        \]
+  \item Fujiwara tightens Cauchy’s classical bound by reducing the factor on the constant term, giving us a generally sharper disk that contains all roots.
+  \item If none of the coefficients vanish, Fujiwara is always sharper: each term in Fujiwara’s max is the \emph{geometric mean} of a prefix of Kojima’s terms, so the maximum can only decrease.
+        \end{itemize}
+\end{itemize}
+\end{frame}
+
 
 \begin{frame}[fragile]{Python Implementation (Part 1)}
 \textbf{Python snippet:}
