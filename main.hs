@@ -3,8 +3,7 @@ import Data.Complex (Complex(..))
 import Data.List (maximumBy, sort)
 import Data.Ord (comparing)
 import System.IO
-import System.Clock (getTime, Clock(Monotonic), toNanoSecs)
-import Text.Printf
+import Data.Time.Clock
 
 maxDepth :: Int
 maxDepth = 600
@@ -17,18 +16,11 @@ readCoefficients path = do
   content <- readFile path
   return $ map read $ lines content
 
-cauchyBound :: [Double] -> Double
-cauchyBound (a:as) = 1 + maximum (map (abs . (/ a)) as)
-
 fujiwaraBound :: [Double] -> Double
 fujiwaraBound coeffs@(a:as) =
   let n = length coeffs - 1
       powers = zipWith (\c j -> 2 * (abs (c / a)) ** (1 / fromIntegral (n - j + 1))) as [1..]
   in maximum powers
-
-
-kojimaBound :: [Double] -> Double
-kojimaBound (a:as) = maximum $ map (\c -> 2 * abs (c / a)) as
 
 derivePoly :: [Double] -> [Double]
 derivePoly coeffs =
@@ -108,38 +100,14 @@ findRoots coeffs a b depth =
                   Nothing -> acc
               ) [] (zip allPoints (tail allPoints))
 
-haskellPolyRoots :: [Double] -> [Complex Double]
-haskellPolyRoots coeffs =
-  let n = length coeffs - 1
-      a = fromList (map (/ head coeffs) (tail coeffs)) :: Vector Double
-      companion = (n><n)
-        [ if i == j+1 then 1
-          else if j == n-1 then -a ! i
-          else 0
-        | i <- [0..n-1], j <- [0..n-1] ] :: Matrix Double
-      complexCompanion = cmap (:+ 0) companion
-  in toList . fst $ eig complexCompanion
-
 main :: IO ()
 main = do
   coeffs <- readCoefficients "poly_coeff_newton.csv"
 
-  start <- getTime Monotonic
+  start <- getCurrentTime
   let bound = fujiwaraBound coeffs
   let roots = findRoots coeffs (-bound) bound 0
-  end <- getTime Monotonic
+  end <- getCurrentTime
 
-  let duration = fromIntegral (toNanoSecs (end - start)) / 1e9 :: Double
   putStrLn $ "Newton-Raphson and Bisection method roots: " ++ show roots
-  printf "Time taken: %.10f seconds\n" duration
-
-  putStrLn "About to compute HMatrix roots..."
-
-  -- Haskell & HMatrix Implementation Comparison
-  startHMatrix <- getTime Monotonic
---  let hMatrixRoots = haskellPolyRoots coeffs
-  endHMatrix <- getTime Monotonic
-
-  let durationHMatrix = fromIntegral (toNanoSecs (endHMatrix - startHMatrix)) / 1e9 :: Double
---  putStrLn $ "Haskell Polynomial Roots: " ++ show hMatrixRoots
-  printf "HMatrix time taken: %.10f seconds\n" durationHMatrix
+  print $ diffUTCTime end start
