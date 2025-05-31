@@ -119,12 +119,9 @@ def newton_raphson(p: np.ndarray, dp: np.ndarray,
     return None
 
 
-def bisection(p: np.ndarray, a: float, b: float,
-              tol: float = TOL) -> float:
-    """
-    Guaranteed root finder assuming p(a)·p(b)<0.
-    """
-    fa, fb = poly_val(p, a), poly_val(p, b)
+def bisection(p, a, b, fa=None, fb=None, tol=TOL):
+    fa = poly_val(p, a) if fa is None else fa
+    fb = poly_val(p, b) if fb is None else fb
     if fa == 0.0:
         return a
     if fb == 0.0:
@@ -142,16 +139,12 @@ def bisection(p: np.ndarray, a: float, b: float,
     return 0.5 * (a + b)
 
 
-def hybrid_interval_root(p: np.ndarray, a: float, b: float) -> float:
-    """
-    Try Newton first; if it fails, fall back to bisection (then refine once).
-    """
+def hybrid_interval_root(p, a, b, flo=None, fhi=None):
     dp = derivative(p)
     mid = 0.5 * (a + b)
     root = newton_raphson(p, dp, mid, a, b)
     if root is None:
-        root = bisection(p, a, b)
-        # one shot of NR to polish
+        root = bisection(p, a, b, flo, fhi)
         root = newton_raphson(p, dp, root, a, b) or root
     return root
 
@@ -177,18 +170,28 @@ def real_roots(p: np.ndarray, tol: float = TOL) -> List[float]:
     roots: List[float] = []
     for lo, hi in zip(endpoints[:-1], endpoints[1:]):
         flo, fhi = poly_val(p, lo), poly_val(p, hi)
-        # handle root exactly at a critical point
-        if abs(flo) < tol:
+        has_root_lo = abs(flo) < tol
+        has_root_hi = abs(fhi) < tol
+
+        # Collect endpoints as roots
+        if has_root_lo:
             roots.append(lo)
-        if abs(fhi) < tol:
+        if has_root_hi:
             roots.append(hi)
-        # standard sign-change bracket
+
+        # If the entire interval is a single repeated root (flat), avoid hybrid
+        if has_root_lo and has_root_hi:
+            continue
+
+        # Only apply hybrid method if sign change OR one side isn’t exactly zero
         if flo * fhi < 0:
-            roots.append(hybrid_interval_root(p, lo, hi))
+            root = hybrid_interval_root(p, lo, hi, flo=flo, fhi=fhi)
+            roots.append(root)
 
     # unique + sorted, rounded to tolerance decimal places
     digits = int(-np.log10(tol))
-    roots = sorted(set(np.round(roots, digits)))
+    roots = np.round(np.array(roots), digits)
+    roots = sorted(set(roots.tolist()))
     return roots
 
 
