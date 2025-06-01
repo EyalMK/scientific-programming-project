@@ -26,11 +26,11 @@ def cauchy_bound(coefficients):
 def fujiwara_bound(coefficients):
     coefficients = np.array(coefficients)
     a_n = coefficients[0]
-    n = len(coefficients) - 1
-    i = np.arange(1, n + 1)
+    n = coefficients.size - 1
+    k = np.arange(1, n + 1)
 
-    b = np.power(np.abs(coefficients[1:] / a_n), 1 / (n - i + 1))
-    return max(2 * b)
+    b = np.power(np.abs(coefficients[1:] / a_n), 1.0 / k)
+    return 2.0 * np.max(b)
 
 
 def kojima_bound(coefficients):
