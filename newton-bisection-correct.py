@@ -6,7 +6,6 @@ import numpy as np
 
 sys.setrecursionlimit(10000)
 TOL = 1e-6
-MAX_NR = 100
 
 
 def read_csv(path):
@@ -69,13 +68,11 @@ def fujiwara_bound(p):
     return 2.0 * np.max(b)
 
 
-def newton_raphson(p, dp, x0, a, b, tol=TOL, max_it=MAX_NR):
+def newton_raphson(p, dp, x0, a, b, tol=TOL, max_it=50):
     x = x0
     if poly_val_sign(p, x) == 0.0:
         return x
     for _ in range(max_it):
-        if poly_val_sign(p, x) == 0.0:
-            break
         ratio = poly_fraction(p, dp, x)
         x_new = x - ratio
         if not (a <= x_new <= b):
@@ -106,13 +103,13 @@ def bisection(p, a, b, tol=TOL):
     return (a + b) / 2
 
 
-def hybrid_interval_root(p, a, b):
+def newton_raphson_and_bisection_method(p, a, b):
     dp = derivative(p)
-    mid = (a + b) / 2
+    initial_guess = (a + b) / 2
 
-    newton_raphson_root = newton_raphson(p, dp, mid, a, b)
+    newton_raphson_root = newton_raphson(p, dp, initial_guess, a, b)
     root = newton_raphson_root
-    if newton_raphson_root is None:
+    if root is None:
         bisection_root = bisection(p, a, b)
         if bisection_root is not None:
             root = newton_raphson(p, dp, bisection_root, a, b)
@@ -121,36 +118,34 @@ def hybrid_interval_root(p, a, b):
     return root
 
 
-def real_roots(p, a, b, tol=TOL):
+def find_roots(p, a, b):
     n = p.size
 
     if n <= 2:
-        return [-p[0] / p[1]]
+        return [-p[1] / p[0]]
     else:
-        crit = real_roots(normalize_by_max_coefficient(derivative(p)), a, b)
+        critical_point = find_roots(normalize_by_max_coefficient(derivative(p)), a, b)
 
-    endpoints = np.sort(np.append(crit, [a, b]))
+    endpoints = np.sort(np.append(critical_point, [a, b]))
 
     roots = []
     for i in range(len(endpoints) - 1):
         lo, hi = endpoints[i], endpoints[i + 1]
         flo, fhi = poly_val_sign(p, lo), poly_val_sign(p, hi)
         if flo != fhi:
-            root = hybrid_interval_root(p, lo, hi)
-            roots.append(root)
+            root = newton_raphson_and_bisection_method(p, lo, hi)
+            if root is not None:
+                roots.append(root)
 
-    digits = int(-np.log10(tol))
-    roots = np.round(roots, digits)
-    unique_roots = np.unique(roots)
-    return unique_roots.tolist()
+    return np.array(roots)
 
 
 if __name__ == "__main__":
     coeffs = read_csv("poly_coeff_newton.csv")
     start = time.time()
     B = fujiwara_bound(coeffs)
-    roots = real_roots(coeffs, -B, B)
-    print(f"Hybrid Newton/Bisection real roots ({len(roots)}): {roots}")
+    roots = find_roots(coeffs, -B, B)
+    print(f"Newton & Bisection real roots ({len(roots)}): {roots}")
     print("Time taken:", time.time() - start, "s\n")
 
     start = time.time()
