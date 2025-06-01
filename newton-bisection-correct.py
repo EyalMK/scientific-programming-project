@@ -18,6 +18,7 @@ def read_csv(path):
 
 
 def poly_val(p, x):
+    # This is the best performing function to evaluate a polynomial, as tuaght by Dan in the lectures.
     x_degrees_by_p = np.ones_like(p) * x
     x_degrees_by_p[0] = 1
     x_degrees_by_p = np.multiply.accumulate(x_degrees_by_p)
@@ -25,6 +26,8 @@ def poly_val(p, x):
 
 
 def poly_val_sign(p, x):
+    # This function evaluates the polynomial p(x) and returns the sign of the value.
+    # If x is outside the interval [-1, 1], we use the transformation y = 1/x to avoid overflow, as taught by Dan in the lectures.
     if abs(x) <= 1:
         return np.sign(poly_val(p, x))
     n = len(p) - 1
@@ -36,6 +39,8 @@ def poly_val_sign(p, x):
 
 
 def poly_fraction(p, q, x):
+    # This function evaluates the polynomial fraction p(x) / q(x).
+    # If x is outside the interval [-1, 1], we use the transformation y = 1/x to avoid overflow, as taught by Dan in the lectures.
     n = len(p) - len(q)
     if np.abs(x) > 1:
         p_coefficients = p[::-1]
@@ -53,6 +58,7 @@ def derivative(p):
 
 
 def normalize_by_max_coefficient(p):
+    # We normalize the polynomial by its maximum coefficient to avoid overflow issues, as taught by Dan in the lectures.
     max_coeff = np.max(np.abs(p))
     if max_coeff != 0:
         return np.array(p / max_coeff)
@@ -70,8 +76,7 @@ def fujiwara_bound(p):
 
 def newton_raphson(p, dp, x0, a, b, tol=TOL, max_it=50):
     x = x0
-    if poly_val_sign(p, x) == 0.0:
-        return x
+    # max_it = 50 is the default number of iterations for convergence by scipy.optimize.newton...
     for _ in range(max_it):
         ratio = poly_fraction(p, dp, x)
         x_new = x - ratio
@@ -87,34 +92,42 @@ def bisection(p, a, b, tol=TOL):
     a_sign = poly_val_sign(p, a)
     b_sign = poly_val_sign(p, b)
     if a_sign == 0:
-        return a
+        return a, True
     if b_sign == 0:
-        return b
+        return b, True
 
     while b - a > tol:
         midpoint = (a + b) / 2
         mid_sign = poly_val_sign(p, midpoint)
         if mid_sign == 0 or abs(b - a) < tol:
-            return midpoint
+            return midpoint, False
         if poly_val_sign(p, a) * mid_sign < 0:
             b = midpoint
         else:
             a = midpoint
-    return (a + b) / 2
+    return (a + b) / 2, False
 
 
 def newton_raphson_and_bisection_method(p, a, b):
     dp = derivative(p)
     initial_guess = (a + b) / 2
 
+
+    #  Do newton-raphson first, as it is O(loglogn) and faster for finding roots
+    #  But, it is important to note that if we solve this by using bisection first, we can ensure that the initial guess is within the bounds.
+    #  And that it is close to the root, which is important for convergence of newton-raphson. So overall, that is a better approach.
+    #  However, this is how Dan wanted.
     newton_raphson_root = newton_raphson(p, dp, initial_guess, a, b)
     root = newton_raphson_root
+
+    # If newton-raphson didn't find a root, we will use bisection to find a root in the interval [a, b].
     if root is None:
-        bisection_root = bisection(p, a, b)
-        if bisection_root is not None:
-            root = newton_raphson(p, dp, bisection_root, a, b)
-        else:
-            root = bisection_root
+        point, point_is_root = bisection(p, a, b)
+        # If bisection found a root, we return it.
+        if point_is_root:
+            return point
+        # Otherwise, we will use newton-raphson to refine the point found by bisection, as a fallback.
+        root = newton_raphson(p, dp, point, a, b)
     return root
 
 
@@ -129,11 +142,12 @@ def find_roots(p, a, b):
     endpoints = np.sort(np.append(critical_point, [a, b]))
 
     roots = []
+    # newton-raphson and bisection will only find a single root in an interval (which is why we loop over all possible intervals, we don't know which contain roots and which don't)
     for i in range(len(endpoints) - 1):
-        lo, hi = endpoints[i], endpoints[i + 1]
-        flo, fhi = poly_val_sign(p, lo), poly_val_sign(p, hi)
-        if flo != fhi:
-            root = newton_raphson_and_bisection_method(p, lo, hi)
+        low, high = endpoints[i], endpoints[i + 1]
+        flo, fhi = poly_val_sign(p, low), poly_val_sign(p, high)
+        if flo != fhi:  # Because the root is where f(low) * f(high) < 0 -- so different signs.
+            root = newton_raphson_and_bisection_method(p, low, high)
             if root is not None:
                 roots.append(root)
 
