@@ -1,116 +1,83 @@
-"""
-hybrid_roots.py
-Find *all real* roots of a real-coefficient polynomial with
-
-    • Newton–Raphson  (O(log log 1/eps) iterations) – primary
-    • Bisection       (O(log 1/eps)   iterations) – safe fallback
-
-Dependencies: NumPy only.  No Horner rule; evaluation uses multiply.accumulate.
-"""
+import csv
+import sys
+import time
 
 import numpy as np
-import csv, sys, time
-from typing import List
 
-sys.setrecursionlimit(10_000)
-TOL = 1e-12                        # root precision
-MAX_NR = 50                       # NR iterations before giving up
+sys.setrecursionlimit(10000)
+TOL = 1e-6
+MAX_NR = 100
 
 
-# ─────────────────────────────── I/O ─────────────────────────────────────────
+def read_csv(path):
+    data = []
+    with open(path, mode='r') as f:
+        rows = csv.reader(f)
+        for row in rows:
+            data.append(float(row[0]))
+    return np.array(data)
 
-def read_csv(path: str) -> np.ndarray:
-    """Read one-column CSV → NumPy array (highest degree first)."""
-    with open(path) as f:
-        return np.array([float(r[0]) for r in csv.reader(f)], dtype=float)
+
+def poly_val(p, x):
+    x_degrees_by_p = np.ones_like(p) * x
+    x_degrees_by_p[0] = 1
+    x_degrees_by_p = np.multiply.accumulate(x_degrees_by_p)
+    return np.dot(p, x_degrees_by_p[::-1])
 
 
-# ───────────────────── polynomial helpers (no Horner) ───────────────────────
-
-BIG = 1.0e300                 # largest finite float we ever return
-
-def poly_val(p: np.ndarray, x: float) -> float:
-    """
-    Evaluate p(x) without overflow.
-
-    • For |x| <= X_SAFE  : use the original multiply.accumulate path
-    • For |x| >  X_SAFE  :   p(x) = x^n * q(1/x)
-        – q() is still evaluated with multiply.accumulate (now at |1/x|<1)
-        – only the **sign** and an upper-bounded magnitude are returned
-          (good enough for bracketing & convergence tests)
-    """
+def poly_val_sign(p, x):
+    if abs(x) <= 1:
+        return np.sign(poly_val(p, x))
     n = len(p) - 1
-    # -------- threshold below which x**n fits in 64-bit float ----------
-    X_SAFE = np.exp(700.0 / max(1, n))      # because log(1e308) ≈ 709
-
-    if abs(x) <= X_SAFE:
-        # ---- plain accumulate ----
-        xx = np.full(n + 1, x, dtype=float)
-        xx[0] = 1.0
-        xx = np.multiply.accumulate(xx)
-        return float(np.dot(xx[::-1], p))
-
-    # --------  |x| is huge: rewrite p(x) = x^n * q(1/x)  --------------
-    y = 1.0 / x                              # |y| < 1   → safe powers
-    q = p[::-1]                              # coeffs of q(t)
-    # q(y) with the *small* argument
-    yy = np.full(n + 1, y, dtype=float)
-    yy[0] = 1.0
-    yy = np.multiply.accumulate(yy)
-    qy = float(np.dot(yy[::-1], q))
-
-    # sign(x^n) = sign(x)^n  ( = 1 if n even, sign(x) if n odd )
-    sign_xn = 1.0 if (n % 2 == 0) else np.sign(x)
-    value = sign_xn * qy
-
-    # we do **not** multiply by |x|^n (would overflow) – instead cap
-    return np.clip(value, -BIG, BIG)
+    y = 1 / x
+    p = p[::-1]
+    if n % 2 == 0:
+        return np.sign(poly_val(p, y))
+    return np.sign(poly_val(p, y)) * np.sign(y)
 
 
+def poly_fraction(p, q, x):
+    n = len(p) - len(q)
+    if np.abs(x) > 1:
+        p_coefficients = p[::-1]
+        q_coefficients = q[::-1]
+        y = 1 / x
+        lead_coeff = np.power(x, n)
+        return lead_coeff * poly_val(p_coefficients, y) / poly_val(q_coefficients, y)
+    return poly_val(p, x) / poly_val(q, x)
 
-def derivative(p: np.ndarray) -> np.ndarray:
-    """Return coefficient array of p′(x)."""
+
+def derivative(p):
     n = p.size - 1
-    if n == 0:
-        return np.array([0.0])
-    return p[:-1] * np.arange(n, 0, -1, dtype=float)
+    deg = np.arange(n, 0, -1)
+    return deg * p[:-1]
 
 
-def normalise(p: np.ndarray) -> np.ndarray:
-    """Divide by max-abs coeff ⇒ keeps values near |1|, roots unchanged."""
-    m = np.max(np.abs(p))
-    return p / m if m else p
+def normalize_by_max_coefficient(p):
+    max_coeff = np.max(np.abs(p))
+    if max_coeff != 0:
+        return np.array(p / max_coeff)
+    return np.array(p)
 
 
-# ───────────────────────── radius / bracketing ──────────────────────────────
-
-def fujiwara_bound(p: np.ndarray) -> float:
-    """
-    2 * max_k |a_k / a_0|^{1/k}.  After normalisation this is very tight.
-    """
-    a0 = p[0]
+def fujiwara_bound(p):
+    a_n = p[0]
     n = p.size - 1
     k = np.arange(1, n + 1)
-    return 2.0 * np.max(np.abs(p[1:] / a0) ** (1.0 / k))
+
+    b = np.power(np.abs(p[1:] / a_n), 1.0 / k)
+    return 2.0 * np.max(b)
 
 
-# ───────────────────── root solvers on one interval ─────────────────────────
-
-def newton_raphson(p: np.ndarray, dp: np.ndarray,
-                   x0: float, a: float, b: float,
-                   tol: float = TOL, max_it: int = MAX_NR) -> float | None:
-    """
-    Newton iteration starting at x0.  Return root or None if it fails.
-    """
+def newton_raphson(p, dp, x0, a, b, tol=TOL, max_it=MAX_NR):
     x = x0
+    if poly_val_sign(p, x) == 0.0:
+        return x
     for _ in range(max_it):
-        fx = poly_val(p, x)
-        if abs(fx) < tol:
-            return x
-        dfx = poly_val(dp, x)
-        if dfx == 0.0:
+        if poly_val_sign(p, x) == 0.0:
             break
-        x_new = x - fx / dfx
+        ratio = poly_fraction(p, dp, x)
+        x_new = x - ratio
         if not (a <= x_new <= b):
             break
         if abs(x_new - x) < tol:
@@ -119,98 +86,75 @@ def newton_raphson(p: np.ndarray, dp: np.ndarray,
     return None
 
 
-def bisection(p, a, b, fa=None, fb=None, tol=TOL):
-    fa = poly_val(p, a) if fa is None else fa
-    fb = poly_val(p, b) if fb is None else fb
-    if fa == 0.0:
+def bisection(p, a, b, tol=TOL):
+    a_sign = poly_val_sign(p, a)
+    b_sign = poly_val_sign(p, b)
+    if a_sign == 0:
         return a
-    if fb == 0.0:
+    if b_sign == 0:
         return b
 
     while b - a > tol:
-        m = 0.5 * (a + b)
-        fm = poly_val(p, m)
-        if fm == 0.0 or (b - a) < tol:
-            return m
-        if np.sign(fa) * np.sign(fm) < 0:
-            b, fb = m, fm
+        midpoint = (a + b) / 2
+        mid_sign = poly_val_sign(p, midpoint)
+        if mid_sign == 0 or abs(b - a) < tol:
+            return midpoint
+        if poly_val_sign(p, a) * mid_sign < 0:
+            b = midpoint
         else:
-            a, fa = m, fm
-    return 0.5 * (a + b)
+            a = midpoint
+    return (a + b) / 2
 
 
-def hybrid_interval_root(p, a, b, flo=None, fhi=None):
+def hybrid_interval_root(p, a, b):
     dp = derivative(p)
-    mid = 0.5 * (a + b)
-    root = newton_raphson(p, dp, mid, a, b)
-    if root is None:
-        root = bisection(p, a, b, flo, fhi)
-        root = newton_raphson(p, dp, root, a, b) or root
+    mid = (a + b) / 2
+
+    newton_raphson_root = newton_raphson(p, dp, mid, a, b)
+    root = newton_raphson_root
+    if newton_raphson_root is None:
+        bisection_root = bisection(p, a, b)
+        if bisection_root is not None:
+            root = newton_raphson(p, dp, bisection_root, a, b)
+        else:
+            root = bisection_root
     return root
 
 
-# ───────────────────────── all-real-roots routine ───────────────────────────
+def real_roots(p, a, b, tol=TOL):
+    n = p.size
 
-def real_roots(p: np.ndarray, tol: float = TOL) -> List[float]:
-    """
-    Recursively isolate via derivative critical points, then solve each bracket.
-    """
-    p = normalise(p)                            # keeps numbers tame
-    deg = p.size - 1
-    if deg == 0:
-        return []
-    if deg == 1:
-        return [-p[1] / p[0]]
+    if n <= 2:
+        return [-p[0] / p[1]]
+    else:
+        crit = real_roots(normalize_by_max_coefficient(derivative(p)), a, b)
 
-    # recurse on derivative
-    crit = np.asarray(sorted(real_roots(derivative(p), tol)))
-    B = fujiwara_bound(p)
-    endpoints = np.concatenate(([-B], crit, [B]))
+    endpoints = np.sort(np.append(crit, [a, b]))
 
-    roots: List[float] = []
-    for lo, hi in zip(endpoints[:-1], endpoints[1:]):
-        flo, fhi = poly_val(p, lo), poly_val(p, hi)
-        has_root_lo = abs(flo) < tol
-        has_root_hi = abs(fhi) < tol
-
-        # Collect endpoints as roots
-        if has_root_lo:
-            roots.append(lo)
-        if has_root_hi:
-            roots.append(hi)
-
-        # If the entire interval is a single repeated root (flat), avoid hybrid
-        if has_root_lo and has_root_hi:
-            continue
-
-        # Only apply hybrid method if sign change OR one side isn’t exactly zero
-        if flo * fhi < 0:
-            root = hybrid_interval_root(p, lo, hi, flo=flo, fhi=fhi)
+    roots = []
+    for i in range(len(endpoints) - 1):
+        lo, hi = endpoints[i], endpoints[i + 1]
+        flo, fhi = poly_val_sign(p, lo), poly_val_sign(p, hi)
+        if flo != fhi:
+            root = hybrid_interval_root(p, lo, hi)
             roots.append(root)
 
-    # unique + sorted, rounded to tolerance decimal places
     digits = int(-np.log10(tol))
-    roots = np.round(np.array(roots), digits)
-    roots = sorted(set(roots.tolist()))
-    return roots
-
-
-# ─────────────────────────────── driver ─────────────────────────────────────
-
-def main():
-    coeffs = read_csv("poly_coeff_newton.csv")      # ← your CSV
-    start = time.time()
-    roots = real_roots(np.array(coeffs, float))
-    print(f"Hybrid Newton/Bisection real roots ({len(roots)}): {roots}")
-    print("Time taken:", time.time() - start, "s\n")
-
-    # reference result from NumPy (for verification only)
-    start = time.time()
-    np_roots = np.roots(coeffs)
-    real_part = np.real(np_roots[np.abs(np.imag(np_roots)) < 1e-8])
-    print(f"NumPy roots ({len(real_part)}): {sorted(real_part.tolist())}")
-    print("Time taken", time.time() - start, "s")
+    roots = np.round(roots, digits)
+    unique_roots = np.unique(roots)
+    return unique_roots.tolist()
 
 
 if __name__ == "__main__":
-    main()
+    coeffs = read_csv("poly_coeff_newton.csv")
+    start = time.time()
+    B = fujiwara_bound(coeffs)
+    roots = real_roots(coeffs, -B, B)
+    print(f"Hybrid Newton/Bisection real roots ({len(roots)}): {roots}")
+    print("Time taken:", time.time() - start, "s\n")
+
+    start = time.time()
+    np_roots = np.roots(coeffs)
+    real_part = np.real(np_roots[np.abs(np.imag(np_roots)) < TOL])
+    print(f"NumPy roots ({len(real_part)}): {sorted(real_part.tolist())}")
+    print("Time taken", time.time() - start, "s")
