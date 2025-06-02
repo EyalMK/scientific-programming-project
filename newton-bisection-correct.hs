@@ -1,3 +1,5 @@
+import Debug.Trace (trace)
+
 import Data.Time.Clock
 import Data.List (sort)
 import Numeric.LinearAlgebra (Vector, fromList, toList, dot, cmap, maxElement, size)
@@ -112,9 +114,9 @@ newtonRaphsonAndBisectionMethod p a b =
                     in if pointIsRoot then Just point
                        else newtonRaphson p dp point a b
 
+
 findRootsInIntervals :: Vector Double -> Vector Double -> Vector Double
-findRootsInIntervals p vec =
-  fromList (go (toList vec))
+findRootsInIntervals p intervals = fromList (go (toList intervals))
   where
     go [] = []
     go [_] = []
@@ -122,23 +124,18 @@ findRootsInIntervals p vec =
       | polyValSign p x1 * polyValSign p x2 < 0 =
           case newtonRaphsonAndBisectionMethod p x1 x2 of
             Just root -> root : go (x2:xs)
-            Nothing   -> go (x2:xs)
+            Nothing -> go (x2:xs)
       | otherwise = go (x2:xs)
-
 
 findRoots :: Vector Double -> Double -> Double -> Vector Double
 findRoots p a b
-    | size p <= 2 =
-        let pList = toList p
-        in if length pList == 2 && pList !! 0 /= 0
-           then fromList [ - (pList !! 1) / (pList !! 0) ]
-           else fromList []
-    | otherwise =
-       let dp = polyDerivative p
-           normalizedDp = normalizeByMaxCoefficient dp
-           criticalPointsList = toList (findRoots normalizedDp a b)
-           endpoints = fromList (sort (a : b : criticalPointsList))
-       in findRootsInIntervals p endpoints
+  | size p <= 2 =
+      let pList = toList p
+      in fromList [ - (pList !! 1) / (pList !! 0) ]
+  | otherwise =
+      let criticalPoints = toList $ findRoots (normalizeByMaxCoefficient (polyDerivative p)) a b
+          endpoints = sort (a : b : criticalPoints)
+      in findRootsInIntervals p (fromList endpoints)
 
 main :: IO ()
 main = do

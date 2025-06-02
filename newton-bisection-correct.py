@@ -136,9 +136,9 @@ def find_roots(p, a, b):
     if n <= 2:
         return [-p[1] / p[0]]
     else:
-        critical_point = find_roots(normalize_by_max_coefficient(derivative(p)), a, b)
+        critical_points = find_roots(normalize_by_max_coefficient(derivative(p)), a, b)
 
-    endpoints = np.sort(np.append(critical_point, [a, b]))
+    endpoints = np.sort(np.append(critical_points, [a, b]))
 
     roots = []
     # newton-raphson and bisection will only find a single root in an interval (which is why we loop over all possible intervals, we don't know which contain roots and which don't)
