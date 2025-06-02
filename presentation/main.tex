@@ -11,17 +11,6 @@
     filecolor=magenta,
     urlcolor=cyan,
 }
-\lstset{
-    language=Python,
-    basicstyle=\ttfamily\small,
-    keywordstyle=\color{blue},
-    stringstyle=\color{orange},
-    commentstyle=\color{gray},
-    showstringspaces=false,
-    breaklines=true,
-    frame=single,
-    morekeywords={normalize_by_max_coefficient, derive_poly, find_roots, bisection_method, newton_raphson_method}
-}
 
 \title{Finding Zeroes for Polynomials using}
 \subtitle{Newton-Raphson and Bisection Method}
@@ -66,18 +55,23 @@
     \item Assumptions - Each root x of polynomial f(x) ensures either f'(x) = 0 or x is between two roots of f'(x)
     \item Use Newton-Raphson to find roots in respect to the defined tolerance $\epsilon\ $ \
     \item If bounds are exceeded, fallback to Bisection
+    \item \textbf{Finds a single root in a given interval [a, b]}
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Optimization Techniques}
+
+\begin{frame}{Optimization Techniques*****}
 \begin{itemize}
-    \item \textbf{Python:} Used NumPy vector operations
-    \item \textbf{Haskell:} Used HMatrix for vectorization
-    \item Avoided repeated computation of derivatives
-    \item Interval filtering based on derivative roots
-    \item Used geometrical properties of polynomial roots to find initial bounds
+    \item \textbf{Normalization:} Scaled polynomial by max coefficient to avoid overflow
+    \item \textbf{***Overflow Handling:} Evaluated $p(1/x)$ instead of $p(x)$ for $|x| > 1$
+    \item \textbf{Used solutions from lectures:} Used the best solutions of polyVal, polyDiv and derivative from the lectures.
+    \item \textbf{Redundant Pythonic loops:} Avoided unnecessary usage of Pythonic loops, resorted to NumPy vectorization techniques.
+    \item \textbf{***Derivative Reuse:} Computed derivative once and reused across Newton–Raphson and fallback methods
+    \item \textbf{Early Exit:} Bisection returns immediately if endpoint is root
+    \item \textbf{Bound Estimation:} Used Fujiwara's bound to limit root search space; using geometrical properties of polynomial roots
 \end{itemize}
 \end{frame}
+
 
 \begin{frame}{Polynomial Root Bounds}
 \begin{itemize}
@@ -101,90 +95,51 @@
           \bigl|\tfrac{a_{0}}{2a_n}\bigr|^{\frac1n}
           \Bigr\}.
         \]
-  \item For a \emph{monic} polynomial ($a_n=1$) this simplifies to
-        \[
-        |\gamma|\le 2\max\bigl\{|a_{n-1}|,\;|a_{n-2}|^{1/2},\dots,
-        |a_1|^{1/(n-1)},|a_0/2|^{1/n}\bigr\}.
-        \]
+
   \item Fujiwara tightens Cauchy’s classical bound by reducing the factor on the constant term, giving us a generally sharper disk that contains all roots.
   \item If none of the coefficients vanish, Fujiwara is always sharper: each term in Fujiwara’s max is the \emph{geometric mean} of a prefix of Kojima’s terms, so the maximum can only decrease.
-        \end{itemize}
 \end{itemize}
 \end{frame}
 
-
-\begin{frame}[fragile]{Python Implementation (Part 1)}
-\textbf{Python snippet:}
-\begin{lstlisting}
-def find_roots(coefficients, a, b):
-    roots = []
-    n = len(coefficients)
-    if n > 2:
-        d_roots = find_roots(
-            normalize_by_max_coefficient(
-                derive_poly(coefficients, n - 1)
-            ),
-            a, b
-        )
-    else:
-        return [-coefficients[0] / coefficients[1]]
-\end{lstlisting}
-\end{frame}
-
-\begin{frame}[fragile]{Python Implementation (Part 2)}
-\begin{lstlisting}
-    d_roots = np.sort(np.append(d_roots, [a, b]))
-    for i in range(len(d_roots) - 1):
-        interval_start, interval_end = d_roots[i], d_roots[i + 1]
-        bisection_root = bisection_method(
-            coefficients, interval_start, interval_end
-        )
-        if bisection_root is not None:
-            root = newton_raphson_method(
-                coefficients, n, bisection_root, interval_start, interval_end
-            )
-            if root is not None:
-                roots.append(root)
-    return np.array(roots)
-\end{lstlisting}
-\end{frame}
-
 \begin{frame}[fragile]{Python Runtime}
-\texttt{Tolerance used: 1e-10, Polynomial: Provided CSV - 996 Coefficients and a free coefficient}
+\texttt{Tolerance used: 1e-6, Polynomial: Provided CSV - 996 Coefficients and a free coefficient}
 \includegraphics[width=1.0\textwidth]{python_runtime.png}
 \end{frame}
 
-
-% \begin{frame}{Haskell Implementation}
-% \begin{itemize}
-%     \item Language constraints: Only HMatrix for vector ops
-%     \item Pure functional style with recursion
-%     \item No use of prebuilt root solvers
-% \end{itemize}
-% \vspace{1em}
-% \textbf{Code Snippet:}
-% \begin{verbatim}
-% \-- Your Haskell implementation here
-% \end{verbatim}
-% \end{frame}
+\begin{frame}[fragile]{Haskell Runtime}
+\texttt{Tolerance used: 1e-6, Polynomial: Provided CSV - 996 Coefficients and a free coefficient}
+\includegraphics[width=1.0\textwidth]{haskell_runtime.png}
+\end{frame}
 
 \begin{frame}{Runtime Comparison}
 \begin{itemize}
     \item Compared custom vs. built-in implementations
-    \item Built-in methods: NumPy root finder for Python, HMatrix for Haskell
+    \item Built-in methods: NumPy root finder for Python
+    \item Custom methods: NumPy vectorization for Python, HMatrix for Haskell
     \item Our implementations stayed under 8s for all tests
     \item Differences due to derivative accuracy, convergence criteria
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Runtime Comparison - Closer Look at Built-in Methods}
+\begin{frame}{Runtime Comparison – Closer Look at Built-in Methods******}
 \begin{itemize}
-    \item Built-in implementations utilize Newton-Raphson only if the derivative of f is provided, otherwise the secant method is used. If the second order derivative of f is provided, parabolic Halley's method is used.
-    \subitem Convergence rate of Newton-Raphson is quadratic, Halley's is cubic and secant's is sub-quadratic - well behaved functions produce errors in the estimated zeroes/roots are approximately the square of the requested tolerance $\epsilon $ up to roundoff error
-    \item In Numpy: ...
-    \item In HMatrix: ...
-    \item This is faster because...
-    \item See Docs: \href{https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.newton.html}{SciPy.optimize.newton}
+    \item Built-in implementations adaptively select methods:
+    \begin{itemize}
+        \item Uses Newton–Raphson if $f'(x)$ is provided - quadratic convergence rate
+        \item Else it Falls back to Secant method - sub-quadratic convergence rate
+        \item Uses Halley’s method if $f''(x)$ is provided - cubic convergence rate
+        \item See Docs: \href{https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.newton.html}{SciPy.optimize.newton}
+    \end{itemize}
+
+
+    \item \textbf{Why NumPy (\texttt{np.roots}) is faster:}
+    \begin{itemize}
+        \item Uses eigenvalue decomposition of the companion matrix
+        \item Backed by low-level Fortran libraries (e.g., LAPACK)
+        \item Executes fully in compiled code (no Python loop overhead)
+        \item Optimized for dense, fixed-size numeric arrays
+    \end{itemize}
+
 \end{itemize}
 \end{frame}
 
