@@ -1,5 +1,3 @@
-import Debug.Trace (trace)
-
 import Data.Time.Clock
 import Data.List (sort)
 import Numeric.LinearAlgebra (Vector, fromList, toList, dot, cmap, maxElement, size)
