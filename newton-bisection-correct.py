@@ -112,7 +112,6 @@ def newton_raphson_and_bisection_method(p, a, b):
     dp = derivative(p)
     initial_guess = (a + b) / 2
 
-
     #  Do newton-raphson first, as it is O(loglogn) and faster for finding roots
     #  But, it is important to note that if we solve this by using bisection first, we can ensure that the initial guess is within the bounds.
     #  And that it is close to the root, which is important for convergence of newton-raphson. So overall, that is a better approach.
@@ -145,8 +144,8 @@ def find_roots(p, a, b):
     # newton-raphson and bisection will only find a single root in an interval (which is why we loop over all possible intervals, we don't know which contain roots and which don't)
     for i in range(len(endpoints) - 1):
         low, high = endpoints[i], endpoints[i + 1]
-        flo, fhi = poly_val_sign(p, low), poly_val_sign(p, high)
-        if flo != fhi:  # Because the root is where f(low) * f(high) < 0 -- so different signs.
+        p_low, p_high = poly_val_sign(p, low), poly_val_sign(p, high)
+        if p_low * p_high < 0:  # Because the root is where p(low) * p(high) < 0 -- so different signs.
             root = newton_raphson_and_bisection_method(p, low, high)
             if root is not None:
                 roots.append(root)
@@ -159,11 +158,11 @@ if __name__ == "__main__":
     start = time.time()
     B = fujiwara_bound(coeffs)
     roots = find_roots(coeffs, -B, B)
-    print(f"Newton & Bisection real roots ({len(roots)}): {roots}")
-    print("Time taken:", time.time() - start, "s\n")
+    print(f"Newton-Raphson & Bisection real roots ({len(roots)}): {roots}")
+    print("Time taken:", time.time() - start, "seconds\n")
 
     start = time.time()
     np_roots = np.roots(coeffs)
     real_part = np.real(np_roots[np.abs(np.imag(np_roots)) < TOL])
     print(f"NumPy roots ({len(real_part)}): {sorted(real_part.tolist())}")
-    print("Time taken", time.time() - start, "s")
+    print("Time taken", time.time() - start, "seconds")
