@@ -138,19 +138,23 @@ def find_roots(p, a, b):
     else:
         critical_points = find_roots(normalize_by_max_coefficient(derivative(p)), a, b)
 
-    endpoints = np.sort(np.append(critical_points, [a, b]))
+        endpoints = np.sort(np.append(critical_points, [a, b]))
 
-    roots = []
-    # newton-raphson and bisection will only find a single root in an interval (which is why we loop over all possible intervals, we don't know which contain roots and which don't)
-    for i in range(len(endpoints) - 1):
-        low, high = endpoints[i], endpoints[i + 1]
-        p_low, p_high = poly_val_sign(p, low), poly_val_sign(p, high)
-        if p_low * p_high < 0:  # Because the root is where p(low) * p(high) < 0 -- so different signs.
-            root = newton_raphson_and_bisection_method(p, low, high)
-            if root is not None:
-                roots.append(root)
+        roots = []
+        # newton-raphson and bisection will only find a single root in an interval (which is why we loop over all possible intervals, we don't know which contain roots and which don't)
+        for i in range(len(endpoints) - 1):
+            low, high = endpoints[i], endpoints[i + 1]
+            p_low, p_high = poly_val_sign(p, low), poly_val_sign(p, high)
+            if p_low == 0:
+                return [low]
+            if p_high == 0:
+                return [high]
+            if p_low * p_high < 0:  # Because the root is where p(low) * p(high) < 0 -- so different signs.
+                root = newton_raphson_and_bisection_method(p, low, high)
+                if root is not None:
+                    roots.append(root)
 
-    return np.array(roots)
+        return np.array(roots)
 
 
 if __name__ == "__main__":
