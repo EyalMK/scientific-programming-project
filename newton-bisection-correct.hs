@@ -1,10 +1,8 @@
-import System.IO (openFile, hPutStrLn, IOMode(WriteMode), hClose)
 import Data.Time.Clock
-import Data.List (sort, nub)
-import Numeric.LinearAlgebra (Vector, fromList, toList, dot, cmap, maxElement, size)
+import Data.List (sort)
 
 tolerance :: Double
-tolerance = 1e-8
+tolerance = 1e-6
 
 maxItr :: Int
 maxItr = 50
@@ -12,6 +10,24 @@ maxItr = 50
 maxDepth :: Int
 maxDepth = 10000
 
+--fold_r :: (a -> a -> a) -> a -> [a] -> a
+--fold_r _ x []     = x
+--fold_r f x (t:ts) = fold_r f (x `f` t) ts
+--
+--zipp :: [a] -> [b] -> [(a,b)]
+--zipp [] _ = []
+--zipp _ [] = []
+--zipp (x:xs) (y:ys) = (x, y) : zipp xs ys
+--
+--mapp :: (a -> b) -> [a] -> [b]
+--mapp f []     = []
+--mapp f (x:xs) = (f x) : mapp f xs
+--
+--revLst :: [a] -> [a]
+--revLst l = rev l []
+--    where
+--        rev [] l     = l
+--        rev (x:xs) l = rev xs (x:l)
 
 readCoefficients :: FilePath -> IO [Double]
 readCoefficients path = do
@@ -32,23 +48,17 @@ normalizeByMaxCoefficient coeffs =
 
 polyVal :: [Double] -> Double -> Double
 polyVal coeffs x =
-  sum $ zipWith (*) coeffs (reverse $ map (x **) [0..fromIntegral (length coeffs - 1)])
-
-signOf :: Double -> Double -> Double
-signOf eps val
-  | abs val < eps = 0.0
-  | otherwise     = signum val
+  sum $ map (\(a,b) -> a*b) (zip coeffs (reverse $ map (x **) [0..fromIntegral (length coeffs - 1)]))
 
 polyValSign :: [Double] -> Double -> Double
-polyValSign p x =
-    if abs x <= 1
-    then signOf tolerance $ polyVal p x
-    else let n = length p - 1
-             y = 1 / x
-             reversedP = reverse p
-             in if even n
-             then signOf tolerance $ polyVal reversedP y
-             else (signOf tolerance $ polyVal reversedP y) * (signOf tolerance y)
+polyValSign p x
+  | abs x <= 1 = signum $ polyVal p x
+  | otherwise =
+      let y = 1 / x
+          n = length p - 1
+          reverseP = reverse p
+      in if even n then signum $ polyVal reverseP y
+      else signum $ polyVal reverseP y * signum y
 
 polyFraction :: [Double] -> [Double] -> Double -> Double
 polyFraction p q x =
@@ -64,7 +74,7 @@ polyFraction p q x =
 polyDerivative :: [Double] -> [Double]
 polyDerivative p =
     let n = length p - 1
-    in zipWith (*) (map fromIntegral [n, n-1..1]) p
+    in map (\(a, b) -> a * b) (zip (map fromIntegral [n, n-1..1]) p)
 
 newtonRaphson :: [Double] -> [Double] -> Double -> Double -> Double -> Int -> Maybe Double
 newtonRaphson p dp x0 a b 0 = Nothing
@@ -76,25 +86,19 @@ newtonRaphson p dp x0 a b iteration =
      else newtonRaphson p dp x1 a b (iteration - 1)
 
 bisection :: [Double] -> Double -> Double -> (Double, Bool)
-bisection p a b =
-    let aSign = polyValSign p a
-        bSign = polyValSign p b
-    in if aSign == 0.0
-          then (a, True)
-       else if bSign == 0.0
-          then (b, True)
-       else go a b
+bisection p a b
+  | aSign == 0.0 = (a, True)
+  | bSign == 0.0 = (b, True)
+  | abs (b - a) < tolerance = ((a + b) / 2, False)
+  | midSign == 0.0 = (midpoint, False)
+  | aSign * midSign < 0 = bisection p a midpoint
+  | otherwise = bisection p midpoint b
   where
-    go a b
-      | b - a < tolerance = ((a + b) / 2, False)
-      | otherwise =
-          let midpoint = (a + b) / 2
-              midSign = polyValSign p midpoint
-          in if midSign == 0.0 || abs (b - a) < tolerance
-                then (midpoint, False)
-             else if polyValSign p a * midSign < 0
-                then go a midpoint
-                else go midpoint b
+    aSign = polyValSign p a
+    bSign = polyValSign p b
+    midpoint = (a + b) / 2
+    midSign = polyValSign p midpoint
+
 
 findRoots :: [Double] -> Double -> Double -> Int -> [Double]
 findRoots coeffs a b depth
@@ -106,9 +110,9 @@ findRoots coeffs a b depth
          let root = -a0 / a1
          in [root | a <= root, root <= b]
   | otherwise =
-       let d_coeffs = polyDerivative coeffs
-           d_roots = if all (== 0) d_coeffs then []
-                     else nub $ findRoots d_coeffs a b (depth + 1)
+       let dp_coeffs = polyDerivative coeffs
+           normalized_d_coeffs = normalizeByMaxCoefficient dp_coeffs
+           d_roots = findRoots normalized_d_coeffs a b (depth + 1)
            allPoints = sort (a : b : d_roots)
            checkInterval x1 x2 acc =
              let p_low  = polyValSign coeffs x1
@@ -119,52 +123,31 @@ findRoots coeffs a b depth
                    then x2 : acc
                 else if p_low * p_high < 0
                    then
-                     let (point, isRoot) = bisection coeffs x1 x2
-                     in if isRoot
-                           then point : acc
-                        else
-                           case newtonRaphson coeffs dp point x1 x2 maxItr of
-                             Just root -> root : acc
-                             Nothing   -> acc
+                     let initialGuess = (x1 + x2) / 2
+                     in case newtonRaphson coeffs dp_coeffs initialGuess x1 x2 maxItr of
+                        Just root -> root : acc
+                        Nothing ->
+                             let (point, isRoot) = bisection coeffs x1 x2
+                             in if isRoot
+                                    then point : acc
+                                    else
+                                       case newtonRaphson coeffs dp_coeffs point x1 x2 maxItr of
+                                         Just root -> root : acc
+                                         Nothing   -> acc
                 else acc
-       in nub $ foldr (\(x1, x2) acc -> checkInterval x1 x2 acc)
-                [] (zip allPoints (tail allPoints))
+       in foldr (\(x1, x2) acc -> checkInterval x1 x2 acc)
+            [] (zip allPoints (tail allPoints))
+
   where
     degree = length coeffs - 1
-    dp = polyDerivative coeffs
 
-main :: IO ()
 main = do
   p <- readCoefficients "poly_coeff_newton.csv"
-  let bound = fujiwaraBound p
-
-  let dp = polyDerivative p
-  let dproots = sort $ findRoots (normalizeByMaxCoefficient dp) (-bound) bound 0
-  let endpoints = sort ((-bound) : dproots ++ [bound])
-  let values = [polyVal p x | x <- endpoints]
-  let signs = [polyValSign p x | x <- endpoints]
-  let intervals = zip endpoints (tail endpoints)
-  let intervalSigns = [(a, b, polyValSign p a, polyValSign p b) | (a, b) <- intervals]
-  let rootIntervals = [(a, b) | (a, b, s1, s2) <- intervalSigns, s1 * s2 < 0]
-
-  -- Open file for writing
-  h <- openFile "haskell_output.txt" WriteMode
-  hPutStrLn h $ "Coefficients: " ++ show p
-  hPutStrLn h $ "Fujiwara bound: " ++ show bound
-  hPutStrLn h $ "Derivative roots (dproots): " ++ show dproots
-  hPutStrLn h $ "Endpoints: " ++ show endpoints
-  hPutStrLn h $ "Values at endpoints: " ++ show values
-  hPutStrLn h $ "Signs at endpoints: " ++ show signs
-  hPutStrLn h $ "Intervals and their endpoint signs: " ++ show intervalSigns
-  hPutStrLn h $ "Intervals chosen for root search (sign change): " ++ show rootIntervals
 
   start <- getCurrentTime
+  let bound = fujiwaraBound p
   let roots = findRoots p (-bound) bound 0
+  putStrLn $ "Newton-Raphson & Bisection real roots: " ++ show roots
   end <- getCurrentTime
 
-  putStrLn $ "Newton-Raphson & Bisection real roots: " ++ show roots
-  print $ diffUTCTime end start
-
-  hPutStrLn h $ "Roots found: " ++ show roots
-  hPutStrLn h $ "Time taken: " ++ show (realToFrac (diffUTCTime end start) :: Double) ++ " seconds"
-  hClose h
+  putStrLn $ "Time taken: " ++ show (diffUTCTime end start)
